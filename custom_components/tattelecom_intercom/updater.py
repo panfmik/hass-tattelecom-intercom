@@ -1,68 +1,66 @@
-"""Tattelecom Intercom data updater."""
-
+"""Tattelecom Intercom updater."""
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
-import logging
-from dataclasses import dataclass
 from datetime import timedelta
-from functools import cached_property
+import logging
 from random import randint
-from typing import Any
+from functools import cached_property
+from dataclasses import dataclass
+from typing import Any, Callable
 
-from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
-from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import event
+from homeassistant.util.dt import utcnow
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_send
-from homeassistant.helpers.entity import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.httpx_client import create_async_httpx_client
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
-from homeassistant.util import utcnow
-from httpx import AsyncHTTPTransport, codes
+from homeassistant.helpers.update_coordinator import (
+    DataUpdateCoordinator,
+    UpdateFailed,
+)
+import httpx
 
-from .client import IntercomClient
 from .const import (
     ATTR_MUTE,
-    ATTR_SIP_ADDRESS,
     ATTR_SIP_LOGIN,
-    ATTR_SIP_PASSWORD,
-    ATTR_SIP_PORT,
     ATTR_STREAM_URL,
     ATTR_STREAM_URL_MPEG,
-    ATTR_UPDATE_STATE,
-    DEFAULT_RETRY,
+    ATTR_SIP_ADDRESS,
+    ATTR_SIP_PORT,
+    ATTR_SIP_PASSWORD,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_TIMEOUT,
+    DEFAULT_STREAM_TYPES,
+    SIP_DEFAULT_RETRY,
     DOMAIN,
     MAINTAINER,
     NAME,
-    SIGNAL_CALL_STATE,
     SIGNAL_NEW_INTERCOM,
-    SIP_DEFAULT_RETRY,
+    SIGNAL_CALL_STATE,
     UPDATER,
 )
-from .exceptions import (
-    IntercomConnectionError,
-    IntercomError,
-    IntercomUnauthorizedError,
-)
-from .voip import Call, IntercomVoip
+from .exceptions import IntercomConnectionError
+from .client import IntercomClient
+from .voip import IntercomVoip, Call
+
+CALLBACK_TYPE = Callable[[Any], None]
 
 _LOGGER = logging.getLogger(__name__)
 
 
 # pylint: disable=too-many-branches,too-many-lines,too-many-arguments
-class IntercomUpdater(DataUpdateCoordinator):
-    """Tattelecom Intercom data updater for interaction with Tattelecom intercom API."""
+class IntercomUpdater(DataUpdateCoordinator[dict[str, Any]]):
+    """Tattelecom Intercom data updater."""
 
     client: IntercomClient
 
     voip: IntercomVoip | None = None
     last_call: Call | None = None
 
-    code: codes = codes.BAD_GATEWAY
+    code: httpx.codes = httpx.codes.BAD_GATEWAY
 
     phone: int
     token: str
@@ -70,6 +68,7 @@ class IntercomUpdater(DataUpdateCoordinator):
     new_intercom_callbacks: list[CALLBACK_TYPE] = []
 
     _scan_interval: int
+    _is_first_update: bool
 
     def __init__(
         self,
@@ -78,55 +77,109 @@ class IntercomUpdater(DataUpdateCoordinator):
         token: str,
         scan_interval: int = DEFAULT_SCAN_INTERVAL,
         timeout: int = DEFAULT_TIMEOUT,
+        stream_types: list[str] = DEFAULT_STREAM_TYPES,
     ) -> None:
-        """Initialize updater.
+        """Initialize updater."""
 
-        :rtype: object
-        :param hass: HomeAssistant: Home Assistant object
-        :param phone: int: Phone number
-        :param token: str: Token
-        :param scan_interval: int: Update interval
-        :param timeout: int: Query execution timeout
-        """
-
-        _transport: AsyncHTTPTransport = AsyncHTTPTransport(
-            http1=False, http2=True, retries=3
+        super().__init__(
+            hass,
+            _LOGGER,
+            name=f"{NAME} updater",
+            update_interval=timedelta(seconds=scan_interval),
         )
+
+        self.phone = phone
+        self.token = token
+        self._scan_interval = scan_interval
+        self._is_first_update = True
+
         self.client = IntercomClient(
             create_async_httpx_client(
-                hass, True, http1=False, http2=True, transport=_transport
+                hass,
+                verify_ssl=True,
+                http1=False,
+                http2=True
             ),
             phone,
             token,
             timeout,
         )
 
-        self.phone = phone
+        self.stream_types = stream_types
 
-        self._scan_interval = scan_interval
-
-        if hass is not None:
-            super().__init__(
-                hass,
-                _LOGGER,
-                name=f"{NAME} updater",
-                update_interval=self._update_interval,
-                update_method=self.update,
-            )
-
-        self.data: dict[str, Any] = {}
-
-        self.intercoms: dict[str, IntercomEntityDescription] = {}
-
+        self.voip: IntercomVoip | None = None
+        self.last_call: Call | None = None
+        self.code = httpx.codes.BAD_GATEWAY
+        self.new_intercom_callbacks: list[CALLBACK_TYPE] = []
+        self.intercoms: dict[int, IntercomEntityDescription] = {}
         self.code_map: dict[str, int] = {}
 
-        self._is_first_update: bool = True
+    async def get_snapshot(self, intercom_id: int) -> bytes | None:
+        """Get snapshot from intercom stream.
+        
+        :param intercom_id: int: Intercom ID
+        :return bytes | None: Snapshot image
+        """
+        try:
+            # Получаем URL потока из данных
+            stream_url = self.data.get(f"{intercom_id}_{ATTR_STREAM_URL}")
+            if not stream_url:
+                _LOGGER.error("No stream URL for intercom %s", intercom_id)
+                return None
+
+            _LOGGER.debug("Getting snapshot from %s", stream_url)
+            
+            # Используем httpx для получения кадра
+            async with self.client._client as client:
+                response = await client.get(
+                    stream_url,
+                    timeout=10.0,
+                    follow_redirects=True
+                )
+                
+                if response.status_code == 200:
+                    _LOGGER.debug("Got snapshot for intercom %s, size: %d bytes", 
+                                 intercom_id, len(response.content))
+                    return response.content
+                else:
+                    _LOGGER.error("Failed to get snapshot: %s", response.status_code)
+                    return None
+                    
+        except (httpx.HTTPError, httpx.TimeoutException, OSError) as err:
+            _LOGGER.error("Error getting snapshot for intercom %s: %s",
+                         intercom_id, err, exc_info=True)
+            return None
+
+    async def _async_update_data(self) -> dict[str, Any]:
+        """Update data."""
+        try:
+            data: dict = {}
+            _LOGGER.debug("Starting data update for phone %s", self.phone)
+            
+            await self._async_prepare_intercoms(data)
+            
+            _LOGGER.debug("Data update completed, got %d items: %s", 
+                         len(data), list(data.keys()))
+            
+            # Проверяем, что данные не пустые
+            if not data:
+                _LOGGER.warning("No data received from API for phone %s", self.phone)
+            else:
+                # Логируем первые несколько ключей для отладки
+                sample_keys = list(data.keys())[:5]
+                _LOGGER.debug("Sample data keys: %s", sample_keys)
+                
+            return data
+            
+        except (IntercomConnectionError, asyncio.TimeoutError, httpx.HTTPError) as exc:
+            _LOGGER.error("Update failed for phone %s: %s", self.phone, exc, exc_info=True)
+            raise UpdateFailed(f"Error communicating with API: {exc}") from exc
 
     async def async_stop(self) -> None:
         """Stop updater"""
 
         for _callback in self.new_intercom_callbacks:
-            _callback()  # pylint: disable=not-callable
+            _callback()
 
         if self.voip:
             await self.voip.stop()
@@ -139,35 +192,6 @@ class IntercomUpdater(DataUpdateCoordinator):
         """
 
         return timedelta(seconds=self._scan_interval)
-
-    async def update(self) -> dict:
-        """Update Intercom information.
-
-        :return dict: dict with Intercom data.
-        """
-
-        if not self._is_first_update:
-            await asyncio.sleep(randint(1, 3) * 60)
-
-        self.code = codes.OK
-
-        _err: IntercomError | None = None
-
-        try:
-            await self._async_prepare(self.data)
-        except IntercomUnauthorizedError as _e:
-            raise ConfigEntryAuthFailed(_e) from _e
-        except IntercomError as _e:
-            _err = _e
-
-            self.code = codes.SERVICE_UNAVAILABLE
-
-        self.data[ATTR_UPDATE_STATE] = codes.is_error(self.code)
-
-        if self._is_first_update:
-            self._is_first_update = False
-
-        return self.data
 
     def update_data(self, field: str, value: Any) -> None:
         """Update data
@@ -186,7 +210,6 @@ class IntercomUpdater(DataUpdateCoordinator):
         """
 
         return DeviceInfo(
-            entry_type=DeviceEntryType.SERVICE,
             identifiers={(DOMAIN, str(self.phone))},
             name=NAME,
             manufacturer=MAINTAINER,
@@ -198,8 +221,8 @@ class IntercomUpdater(DataUpdateCoordinator):
         :param offset: timedelta
         """
 
-        if self._unsub_refresh:  # type: ignore
-            self._unsub_refresh()  # type: ignore
+        if self._unsub_refresh:
+            self._unsub_refresh()
             self._unsub_refresh = None
 
         self._unsub_refresh = event.async_track_point_in_utc_time(
@@ -219,21 +242,22 @@ class IntercomUpdater(DataUpdateCoordinator):
 
         try:
             await self._async_prepare_sip_settings(data)
-        except IntercomConnectionError as _err:  # pragma: no cover
+            self._is_first_update = False
+        except IntercomConnectionError as _err:
             _error = _err
 
         await asyncio.sleep(randint(5, 10))
 
         try:
             await self._async_prepare_intercoms(data)
-        except IntercomConnectionError as _err:  # pragma: no cover
+        except IntercomConnectionError as _err:
             _error = _err
 
         with contextlib.suppress(IntercomConnectionError):
             await self.client.streams()
 
-        if _error:  # pragma: no cover
-            if self._is_first_update and retry <= DEFAULT_RETRY:
+        if _error:
+            if self._is_first_update and retry <= SIP_DEFAULT_RETRY:
                 await asyncio.sleep(retry)
 
                 _LOGGER.debug("Error start. retry (%r): %r", retry, _error)
@@ -248,46 +272,69 @@ class IntercomUpdater(DataUpdateCoordinator):
         :param data: dict
         """
 
-        response: dict = await self.client.intercoms()
+        _LOGGER.debug("Fetching intercoms from API for phone %s", self.phone)
+        
+        try:
+            response: dict = await self.client.intercoms()
+            _LOGGER.debug("Got response from API: %s", response)
+        except (IntercomConnectionError, httpx.HTTPError, asyncio.TimeoutError) as err:
+            _LOGGER.error("Error fetching intercoms: %s", err, exc_info=True)
+            raise
 
-        if "addresses" in response:
-            for address, intercoms in response["addresses"].items():
-                for intercom in intercoms:
-                    if (
-                        ATTR_STREAM_URL in intercom and ATTR_STREAM_URL_MPEG in intercom
-                    ):  # pragma: no cover
-                        intercom[ATTR_STREAM_URL] = intercom[ATTR_STREAM_URL_MPEG]
+        if "gates" in response:
+            gates = response["gates"]
+            _LOGGER.debug("Found %d gates in response", len(gates))
+            
+            for gate in gates:
+                gate_id = gate.get("gate_id")
+                _LOGGER.debug("Processing gate %s: %s", gate_id, gate.get("gate_name"))
+                
+                stream_url = gate.get(ATTR_STREAM_URL)
+                stream_url_mpeg = gate.get(ATTR_STREAM_URL_MPEG)
 
-                    for attr in [ATTR_STREAM_URL, ATTR_MUTE, ATTR_SIP_LOGIN]:
-                        data[f"{intercom['id']}_{attr}"] = intercom[attr]
+                # Основной URL для потока: MPEG-TS если есть, иначе HLS
+                primary_stream_url = stream_url_mpeg if stream_url_mpeg else stream_url
 
-                    if intercom["id"] in self.intercoms:
-                        continue
+                _LOGGER.debug(
+                    "Gate %s: stream_url=%s, stream_url_mpeg=%s, primary=%s",
+                    gate_id, stream_url, stream_url_mpeg, primary_stream_url
+                )
 
-                    self.code_map[intercom["sip_login"]] = intercom["id"]
+                data[f"{gate_id}_{ATTR_STREAM_URL}"] = primary_stream_url
+                data[f"{gate_id}_{ATTR_STREAM_URL}_hls"] = stream_url
+                data[f"{gate_id}_{ATTR_STREAM_URL}_mpeg"] = stream_url_mpeg
 
-                    self.intercoms[intercom["id"]] = IntercomEntityDescription(
-                        id=intercom["id"],
-                        device_info=DeviceInfo(
-                            identifiers={(DOMAIN, str(intercom["id"]))},
-                            name=" ".join(
-                                [
-                                    address,
-                                    intercom.get(
-                                        "gate_name", intercom.get("intercom_name", "")
-                                    ),
-                                ]
-                            ).strip(),
-                            manufacturer=MAINTAINER,
-                        ),
+                for attr in [ATTR_MUTE, ATTR_SIP_LOGIN]:
+                    data[f"{gate_id}_{attr}"] = gate.get(attr)
+
+                if gate_id in self.intercoms:
+                    _LOGGER.debug("Gate %s already known", gate_id)
+                    continue
+
+                self.code_map[gate["sip_login"]] = gate_id
+
+                gate_name = gate.get("gate_name", f"Intercom {gate_id}").strip()
+                self.intercoms[gate_id] = IntercomEntityDescription(
+                    id=gate_id,
+                    key=gate_id,
+                    name=gate_name,
+                    device_info=DeviceInfo(
+                        identifiers={(DOMAIN, str(gate_id))},
+                        name=gate_name,
+                        manufacturer=MAINTAINER,
+                    ),
+                )
+
+                _LOGGER.debug("Added new intercom: %s", gate_id)
+
+                if self.new_intercom_callbacks:
+                    async_dispatcher_send(
+                        self.hass,
+                        SIGNAL_NEW_INTERCOM,
+                        self.intercoms[gate_id],
                     )
-
-                    if self.new_intercom_callbacks:
-                        async_dispatcher_send(
-                            self.hass,
-                            SIGNAL_NEW_INTERCOM,
-                            self.intercoms[intercom["id"]],
-                        )
+        else:
+            _LOGGER.warning("No 'gates' in response: %s", response)
 
     async def _async_prepare_sip_settings(self, data: dict) -> None:
         """Prepare sip_settings.
@@ -295,7 +342,14 @@ class IntercomUpdater(DataUpdateCoordinator):
         :param data: dict
         """
 
-        response: dict = await self.client.sip_settings()
+        _LOGGER.debug("Fetching SIP settings from API for phone %s", self.phone)
+        
+        try:
+            response: dict = await self.client.sip_settings()
+            _LOGGER.debug("Got SIP settings response: %s", response)
+        except (IntercomConnectionError, httpx.HTTPError, asyncio.TimeoutError) as err:
+            _LOGGER.error("Error fetching SIP settings: %s", err, exc_info=True)
+            raise
 
         init: bool = False
         if "success" in response and response["success"]:
@@ -313,8 +367,10 @@ class IntercomUpdater(DataUpdateCoordinator):
             )
 
             data |= response
+            _LOGGER.debug("Updated data with SIP settings, init=%s", init)
 
         if init:
+            _LOGGER.debug("Initializing VoIP with new SIP settings")
             self.voip = IntercomVoip(
                 self.hass,
                 data[ATTR_SIP_ADDRESS],
@@ -330,14 +386,14 @@ class IntercomUpdater(DataUpdateCoordinator):
                 )
             )
 
-    async def _call_callback(self, call: Call) -> None:  # pragma: no cover
+    async def _call_callback(self, call: Call) -> None:
         """Call callback
 
         :param call: Call
         """
 
+        _LOGGER.debug("Call callback received: %s", call)
         self.last_call = call
-
         async_dispatcher_send(self.hass, SIGNAL_CALL_STATE)
 
 
@@ -345,8 +401,9 @@ class IntercomUpdater(DataUpdateCoordinator):
 class IntercomEntityDescription:
     """Intercom entity description."""
 
-    # pylint: disable=invalid-name
     id: int
+    key: int
+    name: str
     device_info: DeviceInfo
 
 

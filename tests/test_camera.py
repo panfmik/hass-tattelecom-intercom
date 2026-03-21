@@ -9,8 +9,8 @@ from datetime import timedelta
 from unittest.mock import Mock, patch
 
 import pytest
-from homeassistant.components.camera import ENTITY_ID_FORMAT as CAMERA_ENTITY_ID_FORMAT
-from homeassistant.components.camera import STATE_STREAMING
+CAMERA_ENTITY_ID_FORMAT = "camera.{}"
+STATE_STREAMING = "streaming"
 from homeassistant.core import HomeAssistant, State
 from homeassistant.util.dt import utcnow
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
@@ -79,11 +79,17 @@ async def test_init(hass: HomeAssistant) -> None:
 
         assert updater.last_update_success
 
+        # Get stream type (default is "mpeg")
+        stream_type = updater.stream_types[0]
+        code = f"{MOCK_INTERCOM_ID}_{stream_type}"
         state: State = hass.states.get(
-            _generate_id(str(MOCK_INTERCOM_ID), updater.phone)
+            _generate_id(code, updater.phone)
         )
+        assert state is not None
         assert state.state == STATE_STREAMING
-        assert state.name == CAMERA_NAME
+        intercom = updater.intercoms[MOCK_INTERCOM_ID]
+        expected_name = f"{intercom.name} {CAMERA_NAME} ({stream_type.upper()})"
+        assert state.name == expected_name
         assert state.attributes["icon"] == "mdi:doorbell-video"
         assert state.attributes["brand"] == MAINTAINER
         assert state.attributes["attribution"] == ATTRIBUTION

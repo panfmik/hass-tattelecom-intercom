@@ -1,4 +1,4 @@
-"""General constants."""
+"""Constants for the Tattelecom Intercom integration."""
 from __future__ import annotations
 
 from typing import Final
@@ -8,7 +8,11 @@ from homeassistant.const import Platform
 
 # fmt: off
 DOMAIN: Final = "tattelecom_intercom"
+"""Integration domain."""
+
 NAME: Final = "Tattelecom Intercom"
+"""Integration name."""
+
 MAINTAINER: Final = "Tattelecom"
 ATTRIBUTION: Final = "Data provided by Tattelecom Intercom"
 
@@ -36,8 +40,8 @@ SIGNAL_SIP_STATE: Final = f"{DOMAIN}-sip-state"
 SIGNAL_CALL_STATE: Final = f"{DOMAIN}-call-state"
 
 CONF_PHONE: Final = "phone"
-CONF_LOGIN: Final = "login"
 CONF_SMS_CODE: Final = "sms_code"
+CONF_LOGIN: Final = "login"
 
 PHONE_MIN: Final = 70000000000
 PHONE_MAX: Final = 79999999999
@@ -51,12 +55,18 @@ DEFAULT_CALL_DELAY: Final = 1
 DEFAULT_SLEEP: Final = 3
 DEFAULT_RETRY: Final = 10
 
+"""Retry settings"""
+MAX_RETRIES: Final = 3
+RETRY_DELAY: Final = 1
+RETRY_BACKOFF_MULTIPLIER: Final = 2
+RETRY_STATUS_CODES: Final = (500, 502, 503, 504)
+
 """Tattelecom intercom API client const"""
 CLIENT_URL: Final = "https://domofon.tattelecom.ru/{api_version}/{path}"
 HEADERS: Final = {
     ACCEPT: "application/json",
     ACCEPT_CHARSET: "UTF-8",
-    USER_AGENT: "Ktor client",
+    USER_AGENT: "ktor-client",
     ACCEPT_ENCODING: "gzip",
 }
 DEVICE_CODE: Final = "Android_empty_push_token"
@@ -64,7 +74,7 @@ DEVICE_OS: Final = 1
 
 """Attributes"""
 ATTR_UPDATE_STATE: Final = "update_state"
-ATTR_UPDATE_STATE_NAME: Final = "Update state"
+ATTR_UPDATE_STATE_NAME: Final = "Состояние обновления"
 
 ATTR_SIP_ADDRESS: Final = "sip_address"
 ATTR_SIP_LOGIN: Final = "sip_login"
@@ -74,39 +84,40 @@ ATTR_SIP_PORT: Final = "sip_port"
 ATTR_STREAM_URL: Final = "stream_url"
 ATTR_STREAM_URL_MPEG: Final = "stream_url_mpeg"
 ATTR_MUTE: Final = "mute"
+ATTR_STREAM_TYPE: Final = "stream_type"
 
 """Attributes sensor"""
 SENSOR_SIP_STATE: Final = "sip_state"
-SENSOR_SIP_STATE_NAME: Final = "Sip state"
+SENSOR_SIP_STATE_NAME: Final = "Состояние SIP"
 
 SENSOR_CALL_STATE: Final = "call_state"
-SENSOR_CALL_STATE_NAME: Final = "Call state"
+SENSOR_CALL_STATE_NAME: Final = "Состояние вызова"
 
 """Attributes camera"""
-CAMERA_NAME: Final = "Camera"
+CAMERA_NAME: Final = "Камера"
 
 CAMERA_INCOMING: Final = "incoming"
-CAMERA_INCOMING_NAME: Final = "Incoming"
+CAMERA_INCOMING_NAME: Final = "Входящий вызов"
 
 """Attributes media player"""
 MEDIA_PLAYER_OUTGOING: Final = "outgoing"
-MEDIA_PLAYER_OUTGOING_NAME: Final = "Outgoing"
+MEDIA_PLAYER_OUTGOING_NAME: Final = "Исходящий вызов"
 
 """Attributes button"""
 BUTTON_OPEN: Final = "open_door"
-BUTTON_OPEN_NAME: Final = "Open door"
+BUTTON_OPEN_NAME: Final = "Открыть дверь"
 
 BUTTON_ANSWER: Final = "answer"
-BUTTON_ANSWER_NAME: Final = "Answer"
+BUTTON_ANSWER_NAME: Final = "Ответить"
 
 BUTTON_DECLINE: Final = "decline"
-BUTTON_DECLINE_NAME: Final = "Decline"
+BUTTON_DECLINE_NAME: Final = "Отклонить"
 
 BUTTON_HANGUP: Final = "hangup"
-BUTTON_HANGUP_NAME: Final = "Hangup"
+BUTTON_HANGUP_NAME: Final = "Положить трубку"
 
 """Attributes switch"""
-SWITCH_MUTE_NAME: Final = "Mute"
+SWITCH_MUTE_NAME: Final = "Без звука"
 
 """VoIP"""
 SIP_PORT: Final = 60266
@@ -139,3 +150,18 @@ PHONE_EVENT_KEYS: Final = (
     "C",
     "D",
 )
+CONF_API_VERSION: Final = "api_version"
+DEFAULT_API_VERSION: Final = "v1"
+API_VERSIONS: Final = ["v1", "v2"]
+
+"""Stream types"""
+CONF_STREAM_TYPES: Final = "stream_types"
+DEFAULT_STREAM_TYPES: Final = ["mpeg"]
+STREAM_TYPE_MPEG: Final = "mpeg"
+STREAM_TYPE_HLS: Final = "hls"
+STREAM_TYPE_WEBRTC: Final = "webrtc"
+STREAM_TYPE_OPTIONS: Final = {
+    STREAM_TYPE_MPEG: "MPEG-TS",
+    STREAM_TYPE_HLS: "HLS",
+    STREAM_TYPE_WEBRTC: "WebRTC",
+}

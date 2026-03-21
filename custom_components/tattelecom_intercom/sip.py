@@ -31,7 +31,7 @@ from .const import (
     TAG_DEREGISTER,
     TAG_REGISTER,
 )
-from .enum import (
+from .intercom_enum import (
     MessageStatus,
     MessageType,
     RtpPayloadType,

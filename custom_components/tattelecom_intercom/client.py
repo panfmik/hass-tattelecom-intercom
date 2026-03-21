@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import datetime
@@ -18,8 +19,12 @@ from .const import (
     DIAGNOSTIC_DATE_TIME,
     DIAGNOSTIC_MESSAGE,
     HEADERS,
+    MAX_RETRIES,
+    RETRY_DELAY,
+    RETRY_BACKOFF_MULTIPLIER,
+    RETRY_STATUS_CODES,
 )
-from .enum import ApiVersion, Method
+from .intercom_enum import ApiVersion, Method
 from .exceptions import (
     IntercomConnectionError,
     IntercomNotFoundError,
@@ -71,7 +76,7 @@ class IntercomClient:
         params: dict | None = None,
         api_version: ApiVersion = ApiVersion.V1,
     ) -> dict:
-        """Request method.
+        """Request method with retries.
 
         :param path: str: Api path
         :param method: Method: Api method
@@ -80,53 +85,84 @@ class IntercomClient:
         :param api_version: ApiVersion: Api version
         :return dict: Api data.
         """
-
         _url: str = CLIENT_URL.format(api_version=api_version, path=path)
-        _headers: dict = HEADERS
-
+        _headers: dict = HEADERS.copy()
         if self._token:
             _headers["access-token"] = self._token
 
-        try:
-            async with self._client as client:
-                response: Response = await client.request(
-                    method,
-                    _url,
-                    json=body,
-                    params=params,
-                    headers=_headers,
-                    timeout=self._timeout,
+        last_exception: Exception | None = None
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                async with self._client as client:
+                    response: Response = await client.request(
+                        method,
+                        _url,
+                        json=body,
+                        params=params,
+                        headers=_headers,
+                        timeout=self._timeout,
+                    )
+
+                self._debug("Successful request", _url, response.content, path)
+
+                _data: dict = json.loads(response.content)
+
+                # Check for status codes that indicate temporary failures
+                if response.status_code in RETRY_STATUS_CODES:
+                    raise IntercomConnectionError(
+                        f"Server error {response.status_code}"
+                    )
+
+                if response.status_code == 404:
+                    raise IntercomNotFoundError("Not found")
+
+                if response.status_code == 401:
+                    raise IntercomUnauthorizedError("Unauthorized")
+
+                if response.status_code > 400 or (
+                    "status" in _data and int(_data["status"]) > 400
+                ):
+                    raise IntercomRequestError(
+                        _data.get("error_text", _data.get("message", "Request error"))
+                    )
+
+                # Success
+                return _data
+
+            except (IntercomNotFoundError, IntercomUnauthorizedError, IntercomRequestError):
+                # These are client errors, no retry
+                raise
+            except (HTTPError, ConnectError, TransportError, ValueError, TypeError, json.JSONDecodeError) as e:
+                last_exception = e
+                self._debug("Connection error", _url, e, path)
+                if attempt == MAX_RETRIES:
+                    break
+                delay = RETRY_DELAY * (RETRY_BACKOFF_MULTIPLIER ** attempt)
+                _LOGGER.debug(
+                    "Request failed (attempt %d/%d), retrying in %.1f seconds: %s",
+                    attempt + 1,
+                    MAX_RETRIES + 1,
+                    delay,
+                    str(e),
                 )
+                await asyncio.sleep(delay)
+            except IntercomConnectionError as e:
+                last_exception = e
+                self._debug("Connection error", _url, e, path)
+                if attempt == MAX_RETRIES:
+                    break
+                delay = RETRY_DELAY * (RETRY_BACKOFF_MULTIPLIER ** attempt)
+                _LOGGER.debug(
+                    "Request failed (attempt %d/%d), retrying in %.1f seconds: %s",
+                    attempt + 1,
+                    MAX_RETRIES + 1,
+                    delay,
+                    str(e),
+                )
+                await asyncio.sleep(delay)
 
-            self._debug("Successful request", _url, response.content, path)
-
-            _data: dict = json.loads(response.content)
-        except (
-            HTTPError,
-            ConnectError,
-            TransportError,
-            ValueError,
-            TypeError,
-            json.JSONDecodeError,
-        ) as _e:
-            self._debug("Connection error", _url, _e, path)
-
-            raise IntercomConnectionError("Connection error") from _e
-
-        if response.status_code == 404:
-            raise IntercomNotFoundError("Not found")
-
-        if response.status_code == 401:
-            raise IntercomUnauthorizedError("Unauthorized")
-
-        if response.status_code > 400 or (
-            "status" in _data and int(_data["status"]) > 400
-        ):
-            raise IntercomRequestError(
-                _data.get("error_text", _data.get("message", "Request error"))
-            )
-
-        return _data
+        # If we exhausted all retries
+        raise IntercomConnectionError("Connection error after retries") from last_exception
 
     async def signin(self) -> dict:
         """Signin
@@ -135,31 +171,13 @@ class IntercomClient:
         """
 
         return await self.request(
-            "subscriber/signin",
+            "auth",
             Method.POST,
             {
                 "device_code": DEVICE_CODE,
-                "device_os": DEVICE_OS,
                 "phone": str(self._phone),
             },
-        )
-
-    async def register(self, login: str) -> dict:
-        """Register
-
-        :param login: str: Login
-        :return dict: Response data
-        """
-
-        return await self.request(
-            "subscriber/register",
-            Method.POST,
-            {
-                "device_code": DEVICE_CODE,
-                "device_os": DEVICE_OS,
-                "phone": str(self._phone),
-                "registration_token": login,
-            },
+            api_version=ApiVersion.V2,
         )
 
     async def sms_confirm(self, code: str) -> dict:
@@ -170,9 +188,15 @@ class IntercomClient:
         """
 
         return await self.request(
-            "subscriber/smsconfirm",
+            "auth/confirm-sms",
             Method.POST,
-            {"device_code": DEVICE_CODE, "phone": str(self._phone), "sms_code": code},
+            {
+                "device_code": DEVICE_CODE,
+                "phone": str(self._phone),
+                "sms_code": code,
+                "device_os_id": DEVICE_OS,
+            },
+            api_version=ApiVersion.V2,
         )
 
     async def update_push_token(self, token: str) -> dict:
@@ -215,11 +239,8 @@ class IntercomClient:
         """
 
         return await self.request(
-            "subscriber/available-intercoms",
-            params={
-                "device_code": DEVICE_CODE,
-                "phone": str(self._phone),
-            },
+            "subscriber/gates",
+            api_version=ApiVersion.V2,
         )
 
     # TODO: Not yet supported by the manufacturer.
@@ -246,13 +267,10 @@ class IntercomClient:
         """
 
         return await self.request(
-            "subscriber/open-intercom",
+            "gate/open-door",
             Method.POST,
-            {
-                "device_code": DEVICE_CODE,
-                "phone": str(self._phone),
-                "intercom_id": intercom_id,
-            },
+            {"gate_id": intercom_id, "data": {"screen_id": 1}},
+            api_version=ApiVersion.V2,
         )
 
     async def mute(self, intercom_id: int) -> dict:

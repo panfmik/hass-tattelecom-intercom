@@ -92,9 +92,6 @@ async def async_mock_client(mock_client) -> None:
     mock_client.return_value.signin = AsyncMock(
         return_value=json.loads(load_fixture("signin_data.json"))
     )
-    mock_client.return_value.register = AsyncMock(
-        return_value=json.loads(load_fixture("register_data.json"))
-    )
     mock_client.return_value.sms_confirm = AsyncMock(
         return_value=json.loads(load_fixture("sms_confirm_data.json"))
     )
@@ -125,15 +122,29 @@ async def async_mock_client(mock_client) -> None:
 
 
 async def async_mock_call(
-    phone: IntercomVoip, message: str, state: CallState = CallState.RINGING
+    phone: IntercomVoip | None, message: str, state: CallState = CallState.RINGING
 ) -> Call:
     """Mock call
 
-    :param phone: IntercomVoip
+    :param phone: IntercomVoip | None
     :param message: str
     :param state: CallState
     :return call
     """
+    from unittest.mock import MagicMock, AsyncMock
+
+    if phone is None:
+        # Create a mock IntercomVoip with required attributes
+        mock_phone = MagicMock(spec=IntercomVoip)
+        mock_phone.assigned_ports = []
+        mock_phone.hass = None  # Not needed for test
+        mock_phone.debug = MagicMock()
+        mock_phone.sip = AsyncMock()
+        mock_phone.sip.answer = AsyncMock()
+        mock_phone.sip.hangup = AsyncMock()
+        mock_phone.sip.decline = AsyncMock()
+        mock_phone.stop = AsyncMock()
+        phone = mock_phone
 
     return Call(
         phone, state, await MessageParser().parse(message.encode("utf-8")), 1, MOCK_IP
@@ -143,18 +154,20 @@ async def async_mock_call(
 def get_url(
     path: str,
     query_params: dict | None = None,
+    api_version: ApiVersion = ApiVersion.V1,
 ) -> str:
     """Generate url
 
     :param path: str
     :param query_params: dict | None
+    :param api_version: ApiVersion
     :return: str
     """
 
     if query_params is not None and len(query_params) > 0:
         path += f"?{urllib.parse.urlencode(query_params, doseq=True)}"
 
-    return CLIENT_URL.format(api_version=ApiVersion.V1, path=path)
+    return CLIENT_URL.format(api_version=api_version.value, path=path)
 
 
 def get_audio_fixture_path(file_name: str) -> str:

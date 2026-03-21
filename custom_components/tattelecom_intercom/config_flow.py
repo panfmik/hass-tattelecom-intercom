@@ -9,12 +9,12 @@ from homeassistant import config_entries
 from homeassistant.const import CONF_SCAN_INTERVAL, CONF_TIMEOUT, CONF_TOKEN
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowHandler, FlowResult
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.httpx_client import get_async_client
 from homeassistant.helpers.typing import ConfigType
 
 from .client import IntercomClient
 from .const import (
-    CONF_LOGIN,
     CONF_PHONE,
     CONF_SMS_CODE,
     DEFAULT_SCAN_INTERVAL,
@@ -25,6 +25,11 @@ from .const import (
     PHONE_MAX,
     PHONE_MIN,
     SMS_CODE_LENGTH,
+    CONF_STREAM_TYPES,
+    DEFAULT_STREAM_TYPES,
+    STREAM_TYPE_MPEG,
+    STREAM_TYPE_HLS,
+    STREAM_TYPE_OPTIONS,
 )
 from .exceptions import (
     IntercomConnectionError,
@@ -35,7 +40,6 @@ from .exceptions import (
 from .helper import get_config_value
 
 _LOGGER = logging.getLogger(__name__)
-
 
 class IntercomFlow(FlowHandler):
     """Default flow"""
@@ -65,7 +69,7 @@ class IntercomFlow(FlowHandler):
             try:
                 await self._client.signin()
             except IntercomNotFoundError:
-                return await self.async_step_register(user_input)
+                return await self.async_step_confirm(user_input)
             except IntercomConnectionError:
                 errors = {"base": "connection.error"}
             except IntercomError as err:
@@ -93,48 +97,6 @@ class IntercomFlow(FlowHandler):
             errors=errors,
         )
 
-    async def async_step_register(
-        self, user_input: ConfigType, errors: dict | None = None
-    ) -> FlowResult:
-        """Handle a flow register.
-
-        :param user_input: ConfigType: User data
-        :param errors: dict | None: Errors list
-        :return FlowResult: Result object
-        """
-
-        if user_input.get(CONF_LOGIN):
-            self._entry_data |= user_input
-
-            try:
-                await self._client.register(user_input.get(CONF_LOGIN))  # type: ignore
-            except IntercomUnauthorizedError:
-                return await self.async_step_phone({}, {"base": "unauthorized.error"})
-            except IntercomConnectionError:
-                errors = {"base": "connection.error"}
-            except IntercomError as err:
-                errors = {"base": str(err)}
-            else:
-                return await self.async_step_confirm(user_input)
-
-        return self.async_show_form(
-            step_id="register",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(
-                        CONF_LOGIN,
-                        default=user_input.get(
-                            CONF_LOGIN,
-                            get_config_value(
-                                self._config_entry, CONF_LOGIN, vol.UNDEFINED
-                            ),
-                        ),
-                    ): str,
-                }
-            ),
-            errors=errors,
-        )
-
     async def async_step_confirm(
         self, user_input: ConfigType, errors: dict | None = None
     ) -> FlowResult:
@@ -152,8 +114,6 @@ class IntercomFlow(FlowHandler):
                 result: dict = await self._client.sms_confirm(  # type: ignore
                     user_input.get(CONF_SMS_CODE)
                 )
-
-                await self._client.update_push_token(result["access_token"])  # type: ignore
             except IntercomUnauthorizedError:
                 return await self.async_step_phone({}, {"base": "unauthorized.error"})
             except IntercomConnectionError:
@@ -325,7 +285,7 @@ class IntercomOptionsFlow(IntercomFlow, config_entries.OptionsFlow):
                     else self._client.sip_settings()
                 )
             except IntercomNotFoundError:
-                return await self.async_step_register(user_input)
+                return await self.async_step_confirm(user_input)
             except IntercomConnectionError:
                 errors = {"base": "connection.error"}
             except IntercomError as err:
@@ -372,6 +332,17 @@ class IntercomOptionsFlow(IntercomFlow, config_entries.OptionsFlow):
                             ),
                         ),
                     ): vol.All(vol.Coerce(int), vol.Range(min=DEFAULT_TIMEOUT)),
+                    vol.Optional(
+                        CONF_STREAM_TYPES,
+                        default=user_input.get(
+                            CONF_STREAM_TYPES,
+                            get_config_value(
+                                self._config_entry,
+                                CONF_STREAM_TYPES,
+                                DEFAULT_STREAM_TYPES,
+                            ),
+                        ),
+                    ): cv.multi_select(STREAM_TYPE_OPTIONS),
                 }
             ),
             errors=errors,

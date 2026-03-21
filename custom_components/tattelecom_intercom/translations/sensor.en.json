@@ -1,17 +1,29 @@
 {
-  "state": {
-    "tattelecom_intercom__sip_state": {
-      "inactive": "Inactive",
-      "registering": "Registering",
-      "registered": "Registered",
-      "deregistering": "Deregistering",
-      "failed": "Failed"
+    "state": {
+        "tattelecom_intercom__call_state": {
+            "answered": "Answered",
+            "dialing": "Dialing",
+            "ended": "Ended",
+            "ringing": "Ringing"
+        },
+        "tattelecom_intercom__sip_state": {
+            "deregistering": "Deregistering",
+            "failed": "Failed",
+            "inactive": "Inactive",
+            "registered": "Registered",
+            "registering": "Registering"
+        }
     },
-    "tattelecom_intercom__call_state": {
-      "dialing": "Dialing",
-      "ringing": "Ringing",
-      "answered": "Answered",
-      "ended": "Ended"
+    "entity": {
+        "sensor": {
+            "tattelecom_intercom": {
+                "sip_state": {
+                    "name": "SIP State"
+                },
+                "call_state": {
+                    "name": "Call State"
+                }
+            }
+        }
     }
-  }
 }

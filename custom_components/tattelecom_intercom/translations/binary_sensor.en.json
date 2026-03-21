@@ -1,0 +1,11 @@
+{
+    "entity": {
+        "binary_sensor": {
+            "tattelecom_intercom": {
+                "update_state": {
+                    "name": "Update State"
+                }
+            }
+        }
+    }
+}

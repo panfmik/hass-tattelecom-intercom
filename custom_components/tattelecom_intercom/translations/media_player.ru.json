@@ -1,0 +1,11 @@
+{
+    "entity": {
+        "media_player": {
+            "tattelecom_intercom": {
+                "outgoing": {
+                    "name": "Аудио {intercom_name}"
+                }
+            }
+        }
+    }
+}

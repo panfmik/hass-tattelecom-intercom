@@ -1,0 +1,11 @@
+{
+    "entity": {
+        "switch": {
+            "tattelecom_intercom": {
+                "mute": {
+                    "name": "Без звука {intercom_name}"
+                }
+            }
+        }
+    }
+}

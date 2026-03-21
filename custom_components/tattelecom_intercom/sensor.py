@@ -17,7 +17,6 @@ from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     ATTR_UPDATE_STATE,
@@ -29,7 +28,7 @@ from .const import (
     SIGNAL_SIP_STATE,
 )
 from .entity import IntercomEntity
-from .enum import CallState, VoipState, DeviceClass
+from .intercom_enum import CallState, VoipState, DeviceClass
 from .updater import IntercomUpdater, async_get_updater
 
 PARALLEL_UPDATES = 0
@@ -55,6 +54,7 @@ SENSORS: tuple[SensorEntityDescription, ...] = (
         device_class=DeviceClass.SIP_STATE,
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=True,
+        translation_key="sip_state",
     ),
     SensorEntityDescription(
         key=SENSOR_CALL_STATE,
@@ -63,6 +63,7 @@ SENSORS: tuple[SensorEntityDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         device_class=DeviceClass.CALL_STATE,
         entity_registry_enabled_default=True,
+        translation_key="call_state",
     ),
 )
 
@@ -96,7 +97,7 @@ async def async_setup_entry(
 class IntercomSensor(IntercomEntity, SensorEntity):
     """Intercom sensor entry."""
 
-    _unsub_update: CALLBACK_TYPE
+    _unsub_update: CALLBACK_TYPE | None = None
 
     def __init__(
         self,
@@ -131,24 +132,26 @@ class IntercomSensor(IntercomEntity, SensorEntity):
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
 
-        await CoordinatorEntity.async_added_to_hass(self)
+        await super().async_added_to_hass()
 
-        self._unsub_update = async_dispatcher_connect(
-            self.hass,
-            EVENTS[self.entity_description.key],
-            self._handle_event_update,
-        )
+        if self.entity_description.key in EVENTS:
+            self._unsub_update = async_dispatcher_connect(
+                self.hass,
+                EVENTS[self.entity_description.key],
+                self._handle_event_update,
+            )
 
-    async def will_remove_from_hass(self) -> None:  # pragma: no cover
+    async def will_remove_from_hass(self) -> None:
         """Remove event"""
-
-        if self._unsub_update:
+        if self._unsub_update is not None:
             self._unsub_update()
+            self._unsub_update = None
+            
+        await super().will_remove_from_hass()
 
     @callback
     def _handle_event_update(self) -> None:
         """Update state."""
-
         self._handle_coordinator_update()
 
     def _handle_coordinator_update(self) -> None:
@@ -173,12 +176,12 @@ class IntercomSensor(IntercomEntity, SensorEntity):
 
         if (
             self._attr_native_value == native_value
-            and self._attr_available == is_available  # type: ignore
+            and self._attr_available == is_available
         ):
             return
 
         self._attr_available = is_available
-        self._attr_native_value = native_value  # type: ignore
+        self._attr_native_value = native_value
 
         self._change_icon()
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from homeassistant.components.binary_sensor import (
     ENTITY_ID_FORMAT,
@@ -11,7 +12,7 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntityDescription,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -28,6 +29,7 @@ BINARY_SENSORS: tuple[BinarySensorEntityDescription, ...] = (
         device_class=BinarySensorDeviceClass.PROBLEM,
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=True,
+        translation_key="update_state",
     ),
 )
 
@@ -61,7 +63,10 @@ async def async_setup_entry(
 
 # pylint: disable=too-many-ancestors
 class IntercomBinarySensor(IntercomEntity, BinarySensorEntity):
-    """Intercom binary sensor entry."""
+    """Intercom binary sensor."""
+
+    entity_description: BinarySensorEntityDescription
+    _attr_should_poll: bool = False
 
     def __init__(
         self,
@@ -69,38 +74,35 @@ class IntercomBinarySensor(IntercomEntity, BinarySensorEntity):
         description: BinarySensorEntityDescription,
         updater: IntercomUpdater,
     ) -> None:
-        """Initialize sensor.
+        """Initialize binary sensor."""
+        super().__init__(unique_id, description, updater, ENTITY_ID_FORMAT)
+        
+        self._attr_is_on = bool(updater.data.get(description.key, False))
 
-        :param unique_id: str: Unique ID
-        :param description: BinarySensorEntityDescription: BinarySensorEntityDescription object
-        :param updater: IntercomUpdater: Intercom updater object
-        """
+    @property
+    def is_on(self) -> bool | None:
+        """Return true if the binary sensor is on."""
+        return self._attr_is_on
 
-        IntercomEntity.__init__(self, unique_id, description, updater, ENTITY_ID_FORMAT)
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self._updater.last_update_success
 
-        self._attr_available: bool = (
-            updater.data.get(ATTR_UPDATE_STATE, False)
-            if description.key != ATTR_UPDATE_STATE
-            else True
+    async def async_added_to_hass(self) -> None:
+        """When entity is added to hass."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            self._updater.async_add_listener(self._handle_coordinator_update)
         )
 
-        self._attr_is_on = updater.data.get(description.key, False)
-
+    @callback
     def _handle_coordinator_update(self) -> None:
-        """Update state."""
-
-        is_available: bool = (
-            self._updater.data.get(ATTR_UPDATE_STATE, False)
-            if self.entity_description.key != ATTR_UPDATE_STATE
-            else True
-        )
-
-        is_on: bool = self._updater.data.get(self.entity_description.key, False)
-
-        if self._attr_is_on == is_on and self._attr_available == is_available:  # type: ignore
+        """Handle updated data from the coordinator."""
+        if self.entity_description.key not in self._updater.data:
             return
-
-        self._attr_available = is_available
-        self._attr_is_on = is_on
-
-        self.async_write_ha_state()
+            
+        is_on = bool(self._updater.data.get(self.entity_description.key, False))
+        if self._attr_is_on != is_on:
+            self._attr_is_on = is_on
+            self.async_write_ha_state()

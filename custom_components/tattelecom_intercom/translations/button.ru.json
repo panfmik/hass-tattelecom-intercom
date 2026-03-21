@@ -1,0 +1,20 @@
+{
+    "entity": {
+        "button": {
+            "tattelecom_intercom": {
+                "answer": {
+                    "name": "Ответить"
+                },
+                "decline": {
+                    "name": "Отклонить"
+                },
+                "hangup": {
+                    "name": "Положить трубку"
+                },
+                "open_door": {
+                    "name": "Открыть дверь"
+                }
+            }
+        }
+    }
+}

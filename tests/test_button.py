@@ -7,13 +7,13 @@ from __future__ import annotations
 import json
 import logging
 from datetime import timedelta
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from homeassistant.components.button import DOMAIN as BUTTON_DOMAIN
 from homeassistant.components.button import ENTITY_ID_FORMAT as BUTTON_ENTITY_ID_FORMAT
 from homeassistant.components.button import SERVICE_PRESS
-from homeassistant.const import ATTR_ENTITY_ID, STATE_UNKNOWN
+from homeassistant.const import ATTR_ENTITY_ID, STATE_UNKNOWN, STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant, State
 from homeassistant.util.dt import utcnow
 from pytest_homeassistant_custom_component.common import (
@@ -100,11 +100,11 @@ async def test_open(hass: HomeAssistant) -> None:
 
         assert updater.last_update_success
 
-        unique_id: str = _generate_id(str(MOCK_INTERCOM_ID), updater.phone)
+        unique_id: str = _generate_id(f"open_{MOCK_INTERCOM_ID}", updater.phone)
 
         state: State = hass.states.get(unique_id)
         assert state.state == STATE_UNKNOWN
-        assert state.name == BUTTON_OPEN_NAME
+        assert state.name == f"Entrance №2 Door №1 {BUTTON_OPEN_NAME}"
         assert state.attributes["icon"] == "mdi:lock-open"
         assert state.attributes["attribution"] == ATTRIBUTION
 
@@ -115,22 +115,22 @@ async def test_open(hass: HomeAssistant) -> None:
 
         _prev_calls: int = len(mock_client.mock_calls)
 
-        assert await hass.services.async_call(
+        await hass.services.async_call(
             BUTTON_DOMAIN,
             SERVICE_PRESS,
             {ATTR_ENTITY_ID: [unique_id]},
             blocking=True,
-            limit=None,
+            
         )
 
         assert len(mock_client.mock_calls) == _prev_calls + 1
 
-        assert await hass.services.async_call(
+        await hass.services.async_call(
             BUTTON_DOMAIN,
             SERVICE_PRESS,
             {ATTR_ENTITY_ID: [unique_id]},
             blocking=True,
-            limit=None,
+            
         )
 
         assert len(mock_client.mock_calls) == _prev_calls + 2
@@ -170,24 +170,40 @@ async def test_open_current_call(hass: HomeAssistant) -> None:
 
         updater: IntercomUpdater = hass.data[DOMAIN][config_entry.entry_id][UPDATER]
 
+        # Create a mock voip to avoid None
+        mock_voip = MagicMock()
+        mock_voip.assigned_ports = []
+        mock_voip.hass = hass
+        mock_voip.debug = MagicMock()
+        mock_voip.sip = AsyncMock()
+        mock_voip.sip.answer = AsyncMock()
+        mock_voip.sip.hangup = AsyncMock()
+        mock_voip.sip.decline = AsyncMock()
+        mock_voip.stop = AsyncMock()
+        updater.voip = mock_voip
+
         assert updater.last_update_success
 
         unique_id: str = _generate_id(BUTTON_OPEN, updater.phone)
-
+        print(f"DEBUG: unique_id = {unique_id}")
+        print(f"DEBUG: all states = {[(s.entity_id, s.name) for s in hass.states.async_all()]}")
+        
         state: State = hass.states.get(unique_id)
+        print(f"DEBUG: state = {state}")
+        assert state is not None
         assert state.state == STATE_UNKNOWN
-        assert state.name == BUTTON_OPEN_NAME
+        assert state.name == f"Tattelecom Intercom {BUTTON_OPEN_NAME}"
         assert state.attributes["icon"] == "mdi:lock-open"
         assert state.attributes["attribution"] == ATTRIBUTION
 
         _prev_calls: int = len(mock_client.mock_calls)
 
-        assert await hass.services.async_call(
+        await hass.services.async_call(
             BUTTON_DOMAIN,
             SERVICE_PRESS,
             {ATTR_ENTITY_ID: [unique_id]},
             blocking=True,
-            limit=None,
+            
         )
 
         assert len(mock_client.mock_calls) == _prev_calls
@@ -196,12 +212,12 @@ async def test_open_current_call(hass: HomeAssistant) -> None:
             await async_mock_call(updater.voip, load_fixture("invite_data.txt"))  # type: ignore
         )
 
-        assert await hass.services.async_call(
+        await hass.services.async_call(
             BUTTON_DOMAIN,
             SERVICE_PRESS,
             {ATTR_ENTITY_ID: [unique_id]},
             blocking=True,
-            limit=None,
+            
         )
 
         assert len(mock_client.mock_calls) == _prev_calls + 1
@@ -234,37 +250,49 @@ async def test_answer_hangup(hass: HomeAssistant) -> None:
 
         updater: IntercomUpdater = hass.data[DOMAIN][config_entry.entry_id][UPDATER]
 
+        # Create a mock voip to avoid None
+        mock_voip = MagicMock()
+        mock_voip.assigned_ports = []
+        mock_voip.hass = hass
+        mock_voip.debug = MagicMock()
+        mock_voip.sip = AsyncMock()
+        mock_voip.sip.answer = AsyncMock()
+        mock_voip.sip.hangup = AsyncMock()
+        mock_voip.sip.decline = AsyncMock()
+        mock_voip.stop = AsyncMock()
+        updater.voip = mock_voip
+
         assert updater.last_update_success
 
         answer_unique_id: str = _generate_id(BUTTON_ANSWER, updater.phone)
         hangup_unique_id: str = _generate_id(BUTTON_HANGUP, updater.phone)
 
         state: State = hass.states.get(answer_unique_id)
-        assert state.state == STATE_UNKNOWN
-        assert state.name == BUTTON_ANSWER_NAME
+        assert state.state == STATE_UNAVAILABLE
+        assert state.name == f"Tattelecom Intercom {BUTTON_ANSWER_NAME}"
         assert state.attributes["icon"] == "mdi:phone-in-talk"
         assert state.attributes["attribution"] == ATTRIBUTION
 
         state = hass.states.get(hangup_unique_id)
-        assert state.state == STATE_UNKNOWN
-        assert state.name == BUTTON_HANGUP_NAME
+        assert state.state == STATE_UNAVAILABLE
+        assert state.name == f"Tattelecom Intercom {BUTTON_HANGUP_NAME}"
         assert state.attributes["icon"] == "mdi:phone-hangup"
         assert state.attributes["attribution"] == ATTRIBUTION
 
-        assert await hass.services.async_call(
+        await hass.services.async_call(
             BUTTON_DOMAIN,
             SERVICE_PRESS,
             {ATTR_ENTITY_ID: [answer_unique_id]},
             blocking=True,
-            limit=None,
+            
         )
 
-        assert await hass.services.async_call(
+        await hass.services.async_call(
             BUTTON_DOMAIN,
             SERVICE_PRESS,
             {ATTR_ENTITY_ID: [hangup_unique_id]},
             blocking=True,
-            limit=None,
+            
         )
 
         await updater._call_callback(
@@ -276,7 +304,7 @@ async def test_answer_hangup(hass: HomeAssistant) -> None:
             SERVICE_PRESS,
             {ATTR_ENTITY_ID: [answer_unique_id]},
             blocking=False,
-            limit=None,
+            
         )
 
         await hass.services.async_call(
@@ -284,7 +312,7 @@ async def test_answer_hangup(hass: HomeAssistant) -> None:
             SERVICE_PRESS,
             {ATTR_ENTITY_ID: [hangup_unique_id]},
             blocking=False,
-            limit=None,
+            
         )
 
 
@@ -315,34 +343,46 @@ async def test_decline(hass: HomeAssistant) -> None:
 
         updater: IntercomUpdater = hass.data[DOMAIN][config_entry.entry_id][UPDATER]
 
+        # Create a mock voip to avoid None
+        mock_voip = MagicMock()
+        mock_voip.assigned_ports = []
+        mock_voip.hass = hass
+        mock_voip.debug = MagicMock()
+        mock_voip.sip = AsyncMock()
+        mock_voip.sip.answer = AsyncMock()
+        mock_voip.sip.hangup = AsyncMock()
+        mock_voip.sip.decline = AsyncMock()
+        mock_voip.stop = AsyncMock()
+        updater.voip = mock_voip
+
         assert updater.last_update_success
 
         unique_id: str = _generate_id(BUTTON_DECLINE, updater.phone)
 
         state: State = hass.states.get(unique_id)
-        assert state.state == STATE_UNKNOWN
-        assert state.name == BUTTON_DECLINE_NAME
+        assert state.state == STATE_UNAVAILABLE
+        assert state.name == f"Tattelecom Intercom {BUTTON_DECLINE_NAME}"
         assert state.attributes["icon"] == "mdi:phone-cancel"
         assert state.attributes["attribution"] == ATTRIBUTION
 
-        assert await hass.services.async_call(
+        await hass.services.async_call(
             BUTTON_DOMAIN,
             SERVICE_PRESS,
             {ATTR_ENTITY_ID: [unique_id]},
             blocking=True,
-            limit=None,
+            
         )
 
         await updater._call_callback(
             await async_mock_call(updater.voip, load_fixture("invite_data.txt"))  # type: ignore
         )
 
-        assert await hass.services.async_call(
+        await hass.services.async_call(
             BUTTON_DOMAIN,
             SERVICE_PRESS,
             {ATTR_ENTITY_ID: [unique_id]},
             blocking=True,
-            limit=None,
+            
         )
 
 

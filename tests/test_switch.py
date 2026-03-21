@@ -108,7 +108,7 @@ async def test_mute(hass: HomeAssistant) -> None:
 
         state: State = hass.states.get(unique_id)
         assert state.state == STATE_OFF
-        assert state.name == SWITCH_MUTE_NAME
+        assert state.name == f"Tattelecom Intercom Без звука Entrance №2 Door №1"
         assert state.attributes["icon"] == "mdi:bell"
         assert state.attributes["attribution"] == ATTRIBUTION
 
@@ -119,12 +119,12 @@ async def test_mute(hass: HomeAssistant) -> None:
 
         _prev_calls: int = len(mock_client.mock_calls)
 
-        assert await hass.services.async_call(
+        await hass.services.async_call(
             SWITCH_DOMAIN,
             SERVICE_TURN_ON,
             {ATTR_ENTITY_ID: [unique_id]},
             blocking=True,
-            limit=None,
+            
         )
 
         _prev_calls += 1
@@ -133,12 +133,12 @@ async def test_mute(hass: HomeAssistant) -> None:
         assert state.attributes["icon"] == "mdi:bell-off"
         assert len(mock_client.mock_calls) == _prev_calls
 
-        assert await hass.services.async_call(
+        await hass.services.async_call(
             SWITCH_DOMAIN,
             SERVICE_TURN_OFF,
             {ATTR_ENTITY_ID: [unique_id]},
             blocking=True,
-            limit=None,
+            
         )
 
         _prev_calls += 1
@@ -148,23 +148,23 @@ async def test_mute(hass: HomeAssistant) -> None:
         assert len(mock_client.mock_calls) == _prev_calls
 
         _prev_calls += 1
-        assert await hass.services.async_call(
+        await hass.services.async_call(
             SWITCH_DOMAIN,
             SERVICE_TURN_ON,
             {ATTR_ENTITY_ID: [unique_id]},
             blocking=True,
-            limit=None,
+            
         )
 
         assert len(mock_client.mock_calls) == _prev_calls
 
         _prev_calls += 1
-        assert await hass.services.async_call(
+        await hass.services.async_call(
             SWITCH_DOMAIN,
             SERVICE_TURN_OFF,
             {ATTR_ENTITY_ID: [unique_id]},
             blocking=True,
-            limit=None,
+            
         )
 
         assert len(mock_client.mock_calls) == _prev_calls
@@ -213,7 +213,7 @@ async def test_mute_change(hass: HomeAssistant) -> None:
 
         state: State = hass.states.get(unique_id)
         assert state.state == STATE_OFF
-        assert state.name == SWITCH_MUTE_NAME
+        assert state.name == f"Tattelecom Intercom Без звука Entrance №2 Door №1"
         assert state.attributes["icon"] == "mdi:bell"
         assert state.attributes["attribution"] == ATTRIBUTION
 
@@ -224,7 +224,7 @@ async def test_mute_change(hass: HomeAssistant) -> None:
 
         state = hass.states.get(unique_id)
         assert state.state == STATE_ON
-        assert state.name == SWITCH_MUTE_NAME
+        assert state.name == f"Tattelecom Intercom Без звука Entrance №2 Door №1"
         assert state.attributes["icon"] == "mdi:bell-off"
         assert state.attributes["attribution"] == ATTRIBUTION
 

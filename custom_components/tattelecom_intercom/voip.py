@@ -24,7 +24,7 @@ from .const import (
     SIP_RETRY_SLEEP,
     VOIP_CLEAN_DELAY,
 )
-from .enum import CallState, RtpPayloadType, SendMode, VoipState
+from .intercom_enum import CallState, RtpPayloadType, SendMode, VoipState
 from .exceptions import IntercomError, IntercomInvalidStateError
 from .rtp import RtpClient
 from .sip import IntercomSip, Message

@@ -1,0 +1,14 @@
+{
+    "entity": {
+        "camera": {
+            "tattelecom_intercom": {
+                "incoming": {
+                    "name": "Входящий вызов"
+                },
+                "camera": {
+                    "name": "Камера"
+                }
+            }
+        }
+    }
+}

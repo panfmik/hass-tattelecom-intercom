@@ -1,0 +1,20 @@
+{
+    "entity": {
+        "button": {
+            "tattelecom_intercom": {
+                "answer": {
+                    "name": "Answer"
+                },
+                "decline": {
+                    "name": "Decline"
+                },
+                "hangup": {
+                    "name": "Hang Up"
+                },
+                "open_door": {
+                    "name": "Open Door"
+                }
+            }
+        }
+    }
+}

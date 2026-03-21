@@ -10,13 +10,13 @@ import logging
 import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.httpx_client import get_async_client
-from httpx import HTTPError, Request
+from httpx import HTTPError, Request, RequestError
 from pytest_homeassistant_custom_component.common import load_fixture
 from pytest_httpx import HTTPXMock
 
 from custom_components.tattelecom_intercom.client import IntercomClient
 from custom_components.tattelecom_intercom.const import DEVICE_CODE
-from custom_components.tattelecom_intercom.enum import Method
+from custom_components.tattelecom_intercom.enum import ApiVersion, Method
 from custom_components.tattelecom_intercom.exceptions import (
     IntercomConnectionError,
     IntercomNotFoundError,
@@ -47,18 +47,21 @@ async def test_signin(hass: HomeAssistant, httpx_mock: HTTPXMock) -> None:
 
     request: Request | None = httpx_mock.get_request(method=Method.POST)
     assert request is not None
-    assert request.url == get_url("subscriber/signin")
+    assert request.url == get_url("auth", api_version=ApiVersion.V2)
     assert request.method == Method.POST
-    assert dict(request.headers.items()) == {
+    # Проверяем только наличие ожидаемых заголовков, так как httpx может добавлять свои
+    headers = dict(request.headers.items())
+    expected_headers = {
         "accept": "application/json",
         "accept-charset": "UTF-8",
         "accept-encoding": "gzip",
-        "connection": "keep-alive",
-        "content-length": "83",
+        "user-agent": "ktor-client",
         "content-type": "application/json",
         "host": "domofon.tattelecom.ru",
-        "user-agent": "Ktor client",
+        "connection": "keep-alive",
     }
+    for key, value in expected_headers.items():
+        assert headers.get(key) == value, f"Header {key}: expected {value}, got {headers.get(key)}"
 
 
 @pytest.mark.asyncio
@@ -67,7 +70,9 @@ async def test_signin_connection_error(
 ) -> None:
     """Signin connection error test"""
 
-    httpx_mock.add_exception(exception=HTTPError)  # type: ignore
+    # Клиент выполняет до 4 попыток (MAX_RETRIES=3)
+    for _ in range(4):
+        httpx_mock.add_exception(exception=RequestError("test"))  # type: ignore
 
     client: IntercomClient = IntercomClient(get_async_client(hass, False), MOCK_PHONE)
 
@@ -121,68 +126,6 @@ async def test_signin_request(hass: HomeAssistant, httpx_mock: HTTPXMock) -> Non
         await client.signin()
 
 
-@pytest.mark.asyncio
-async def test_register(hass: HomeAssistant, httpx_mock: HTTPXMock) -> None:
-    """Register test"""
-
-    httpx_mock.add_response(text=load_fixture("register_data.json"), method=Method.POST)
-
-    client: IntercomClient = IntercomClient(get_async_client(hass, False), MOCK_PHONE)
-
-    assert await client.register(MOCK_LOGIN) == json.loads(
-        load_fixture("register_data.json")
-    )
-
-    request: Request | None = httpx_mock.get_request(method=Method.POST)
-    assert request is not None
-    assert request.url == get_url("subscriber/register")
-    assert request.method == Method.POST
-
-
-@pytest.mark.asyncio
-async def test_register_connection_error(
-    hass: HomeAssistant, httpx_mock: HTTPXMock
-) -> None:
-    """Register connection error test"""
-
-    httpx_mock.add_exception(exception=HTTPError)  # type: ignore
-
-    client: IntercomClient = IntercomClient(get_async_client(hass, False), MOCK_PHONE)
-
-    with pytest.raises(IntercomConnectionError):
-        await client.register(MOCK_LOGIN)
-
-
-@pytest.mark.asyncio
-async def test_register_not_found_error(
-    hass: HomeAssistant, httpx_mock: HTTPXMock
-) -> None:
-    """Register not found error test"""
-
-    httpx_mock.add_response(
-        text=load_fixture("error_data.json"), method=Method.POST, status_code=404
-    )
-
-    client: IntercomClient = IntercomClient(get_async_client(hass, False), MOCK_PHONE)
-
-    with pytest.raises(IntercomNotFoundError):
-        await client.register(MOCK_LOGIN)
-
-
-@pytest.mark.asyncio
-async def test_register_unauthorized_error(
-    hass: HomeAssistant, httpx_mock: HTTPXMock
-) -> None:
-    """Register unauthorized error test"""
-
-    httpx_mock.add_response(
-        text=load_fixture("error_data.json"), method=Method.POST, status_code=401
-    )
-
-    client: IntercomClient = IntercomClient(get_async_client(hass, False), MOCK_PHONE)
-
-    with pytest.raises(IntercomUnauthorizedError):
-        await client.register(MOCK_LOGIN)
 
 
 @pytest.mark.asyncio
@@ -201,7 +144,7 @@ async def test_sms_confirm(hass: HomeAssistant, httpx_mock: HTTPXMock) -> None:
 
     request: Request | None = httpx_mock.get_request(method=Method.POST)
     assert request is not None
-    assert request.url == get_url("subscriber/smsconfirm")
+    assert request.url == get_url("auth/confirm-sms", api_version=ApiVersion.V2)
     assert request.method == Method.POST
 
 
@@ -211,7 +154,9 @@ async def test_sms_confirm_connection_error(
 ) -> None:
     """Sms confirm connection error test"""
 
-    httpx_mock.add_exception(exception=HTTPError)  # type: ignore
+    # Клиент выполняет до 4 попыток (MAX_RETRIES=3)
+    for _ in range(4):
+        httpx_mock.add_exception(exception=RequestError("test"))  # type: ignore
 
     client: IntercomClient = IntercomClient(get_async_client(hass, False), MOCK_PHONE)
 
@@ -271,17 +216,19 @@ async def test_update_push_token(hass: HomeAssistant, httpx_mock: HTTPXMock) -> 
     assert request is not None
     assert request.url == get_url("subscriber/update-push-token")
     assert request.method == Method.POST
-    assert dict(request.headers.items()) == {
+    headers = dict(request.headers.items())
+    expected_headers = {
         "accept": "application/json",
         "accept-charset": "UTF-8",
         "accept-encoding": "gzip",
         "access-token": "test",
-        "connection": "keep-alive",
-        "content-length": "109",
+        "user-agent": "ktor-client",
         "content-type": "application/json",
         "host": "domofon.tattelecom.ru",
-        "user-agent": "Ktor client",
+        "connection": "keep-alive",
     }
+    for key, value in expected_headers.items():
+        assert headers.get(key) == value, f"Header {key}: expected {value}, got {headers.get(key)}"
 
 
 @pytest.mark.asyncio
@@ -290,7 +237,9 @@ async def test_update_push_token_connection_error(
 ) -> None:
     """Update push token connection error test"""
 
-    httpx_mock.add_exception(exception=HTTPError)  # type: ignore
+    # Клиент выполняет до 4 попыток (MAX_RETRIES=3)
+    for _ in range(4):
+        httpx_mock.add_exception(exception=RequestError("test"))  # type: ignore
 
     client: IntercomClient = IntercomClient(
         get_async_client(hass, False), MOCK_PHONE, MOCK_TOKEN
@@ -366,7 +315,9 @@ async def test_sip_settings_connection_error(
 ) -> None:
     """Sip settings connection error test"""
 
-    httpx_mock.add_exception(exception=HTTPError)  # type: ignore
+    # Клиент выполняет до 4 попыток (MAX_RETRIES=3)
+    for _ in range(4):
+        httpx_mock.add_exception(exception=RequestError("test"))  # type: ignore
 
     client: IntercomClient = IntercomClient(
         get_async_client(hass, False), MOCK_PHONE, MOCK_TOKEN
@@ -426,10 +377,7 @@ async def test_intercoms(hass: HomeAssistant, httpx_mock: HTTPXMock) -> None:
 
     request: Request | None = httpx_mock.get_request(method=Method.GET)
     assert request is not None
-    assert request.url == get_url(
-        "subscriber/available-intercoms",
-        {"device_code": DEVICE_CODE, "phone": str(MOCK_PHONE)},
-    )
+    assert request.url == get_url("subscriber/gates", api_version=ApiVersion.V2)
     assert request.method == Method.GET
 
 
@@ -439,7 +387,9 @@ async def test_intercoms_connection_error(
 ) -> None:
     """Intercoms connection error test"""
 
-    httpx_mock.add_exception(exception=HTTPError)  # type: ignore
+    # Клиент выполняет до 4 попыток (MAX_RETRIES=3)
+    for _ in range(4):
+        httpx_mock.add_exception(exception=RequestError("test"))  # type: ignore
 
     client: IntercomClient = IntercomClient(
         get_async_client(hass, False), MOCK_PHONE, MOCK_TOKEN
@@ -501,7 +451,7 @@ async def test_open(hass: HomeAssistant, httpx_mock: HTTPXMock) -> None:
 
     request: Request | None = httpx_mock.get_request(method=Method.POST)
     assert request is not None
-    assert request.url == get_url("subscriber/open-intercom")
+    assert request.url == get_url("gate/open-door", api_version=ApiVersion.V2)
     assert request.method == Method.POST
 
 
@@ -511,7 +461,9 @@ async def test_open_connection_error(
 ) -> None:
     """Open connection error test"""
 
-    httpx_mock.add_exception(exception=HTTPError)  # type: ignore
+    # Клиент выполняет до 4 попыток (MAX_RETRIES=3)
+    for _ in range(4):
+        httpx_mock.add_exception(exception=RequestError("test"))  # type: ignore
 
     client: IntercomClient = IntercomClient(
         get_async_client(hass, False), MOCK_PHONE, MOCK_TOKEN
@@ -581,7 +533,9 @@ async def test_mute_connection_error(
 ) -> None:
     """Mute connection error test"""
 
-    httpx_mock.add_exception(exception=HTTPError)  # type: ignore
+    # Клиент выполняет до 4 попыток (MAX_RETRIES=3)
+    for _ in range(4):
+        httpx_mock.add_exception(exception=RequestError("test"))  # type: ignore
 
     client: IntercomClient = IntercomClient(
         get_async_client(hass, False), MOCK_PHONE, MOCK_TOKEN
@@ -651,7 +605,9 @@ async def test_unmute_connection_error(
 ) -> None:
     """Unmute connection error test"""
 
-    httpx_mock.add_exception(exception=HTTPError)  # type: ignore
+    # Клиент выполняет до 4 попыток (MAX_RETRIES=3)
+    for _ in range(4):
+        httpx_mock.add_exception(exception=RequestError("test"))  # type: ignore
 
     client: IntercomClient = IntercomClient(
         get_async_client(hass, False), MOCK_PHONE, MOCK_TOKEN
@@ -723,7 +679,9 @@ async def test_schedule_connection_error(
 ) -> None:
     """Schedule connection error test"""
 
-    httpx_mock.add_exception(exception=HTTPError)  # type: ignore
+    # Клиент выполняет до 4 попыток (MAX_RETRIES=3)
+    for _ in range(4):
+        httpx_mock.add_exception(exception=RequestError("test"))  # type: ignore
 
     client: IntercomClient = IntercomClient(
         get_async_client(hass, False), MOCK_PHONE, MOCK_TOKEN

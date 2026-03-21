@@ -18,7 +18,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.util.read_only_dict import ReadOnlyDict
 
 from .const import PHONE_EVENT_KEYS
-from .enum import RtpPayloadType
+from .intercom_enum import RtpPayloadType
 from .helper import add_bytes, byte_to_bits
 
 _LOGGER = logging.getLogger(__name__)

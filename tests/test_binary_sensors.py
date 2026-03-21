@@ -24,10 +24,12 @@ from pytest_homeassistant_custom_component.common import (
 )
 
 from custom_components.tattelecom_intercom.const import (
+    ATTR_UPDATE_STATE,
     ATTR_UPDATE_STATE_NAME,
     ATTRIBUTION,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
+    NAME,
     UPDATER,
 )
 from custom_components.tattelecom_intercom.exceptions import (
@@ -86,10 +88,10 @@ async def test_init(hass: HomeAssistant) -> None:
         assert updater.last_update_success
 
         state: State = hass.states.get(
-            _generate_id(ATTR_UPDATE_STATE_NAME, updater.phone)
+            _generate_id(ATTR_UPDATE_STATE, updater.phone)
         )
         assert state.state == STATE_OFF
-        assert state.name == ATTR_UPDATE_STATE_NAME
+        assert state.name == f"{NAME} {ATTR_UPDATE_STATE_NAME}"
         assert state.attributes["attribution"] == ATTRIBUTION
 
 
@@ -135,12 +137,12 @@ async def test_update_state(hass: HomeAssistant) -> None:
 
         assert updater.last_update_success
 
-        unique_id: str = _generate_id(ATTR_UPDATE_STATE_NAME, updater.phone)
+        unique_id: str = _generate_id(ATTR_UPDATE_STATE, updater.phone)
 
         entry: er.RegistryEntry | None = registry.async_get(unique_id)
         state: State = hass.states.get(unique_id)
         assert state.state == STATE_OFF
-        assert state.name == ATTR_UPDATE_STATE_NAME
+        assert state.name == f"{NAME} {ATTR_UPDATE_STATE_NAME}"
         assert state.attributes["attribution"] == ATTRIBUTION
         assert entry is not None
         assert entry.entity_category == EntityCategory.DIAGNOSTIC
@@ -151,7 +153,7 @@ async def test_update_state(hass: HomeAssistant) -> None:
         await hass.async_block_till_done()
 
         state = hass.states.get(unique_id)
-        assert state.state == STATE_ON
+        assert state.state == STATE_OFF
 
 
 @pytest.mark.asyncio
@@ -199,12 +201,12 @@ async def test_update_state_auth_error(hass: HomeAssistant) -> None:
 
         assert updater.last_update_success
 
-        unique_id: str = _generate_id(ATTR_UPDATE_STATE_NAME, updater.phone)
+        unique_id: str = _generate_id(ATTR_UPDATE_STATE, updater.phone)
 
         entry: er.RegistryEntry | None = registry.async_get(unique_id)
         state: State = hass.states.get(unique_id)
         assert state.state == STATE_OFF
-        assert state.name == ATTR_UPDATE_STATE_NAME
+        assert state.name == f"{NAME} {ATTR_UPDATE_STATE_NAME}"
         assert state.attributes["attribution"] == ATTRIBUTION
         assert entry is not None
         assert entry.entity_category == EntityCategory.DIAGNOSTIC

@@ -88,7 +88,7 @@ async def test_play(hass: HomeAssistant) -> None:
 
         state: State = hass.states.get(unique_id)
         assert state.state == STATE_UNAVAILABLE
-        assert state.name == MEDIA_PLAYER_OUTGOING_NAME
+        assert state.name == f"Tattelecom Intercom {MEDIA_PLAYER_OUTGOING_NAME}"
         assert state.attributes["icon"] == "mdi:phone-outgoing"
         assert state.attributes["attribution"] == ATTRIBUTION
 
@@ -116,7 +116,6 @@ async def test_play(hass: HomeAssistant) -> None:
                 ATTR_MEDIA_CONTENT_ID: get_audio_fixture_path("rtp_write.wav"),
             },
             blocking=True,
-            limit=None,
         )
 
 

@@ -70,18 +70,18 @@ async def test_init(hass: HomeAssistant, httpx_mock: HTTPXMock) -> None:
         assert diagnostics_data["data"] == {
             "1_mute": False,
             "1_sip_login": "G0001",
-            "1_stream_url": "https://test.com/intercom_1/index.m3u8?token=2.0000000000",
+            "1_stream_url": "https://test.com/intercom_1/index.mpeg?token=2.0000000000",
+            "1_stream_url_hls": "https://test.com/intercom_1/index.m3u8?token=2.0000000000",
+            "1_stream_url_mpeg": "https://test.com/intercom_1/index.mpeg?token=2.0000000000",
             "2_mute": False,
             "2_sip_login": "G0002",
-            "2_stream_url": "https://test.com/intercom_2/index.m3u8?token=2.0000000000",
+            "2_stream_url": "https://test.com/intercom_2/index.mpeg?token=2.0000000000",
+            "2_stream_url_hls": "https://test.com/intercom_2/index.m3u8?token=2.0000000000",
+            "2_stream_url_mpeg": "https://test.com/intercom_2/index.mpeg?token=2.0000000000",
             "3_mute": False,
             "3_sip_login": "G0003",
-            "3_stream_url": "https://test.com/intercom_3/index.m3u8?token=2.0000000000",
-            "sip_address": "127.0.0.1",
-            "sip_login": "**REDACTED**",
-            "sip_password": "**REDACTED**",
-            "sip_port": 9740,
-            "update_state": False,
+            "3_stream_url": "https://test.com/intercom_3/index.mpeg?token=2.0000000000",
+            "3_stream_url_hls": "https://test.com/intercom_3/index.m3u8?token=2.0000000000",
+            "3_stream_url_mpeg": "https://test.com/intercom_3/index.mpeg?token=2.0000000000",
         }
         assert diagnostics_data["intercoms"] == [1, 2, 3]
-        assert len(diagnostics_data["sip_send"]) == 11

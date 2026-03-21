@@ -13,5 +13,17 @@
       "answered": "Ответил",
       "ended": "Завершен"
     }
+  },
+  "entity": {
+    "sensor": {
+      "tattelecom_intercom": {
+        "sip_state": {
+          "name": "Состояние SIP"
+        },
+        "call_state": {
+          "name": "Состояние вызова"
+        }
+      }
+    }
   }
 }
