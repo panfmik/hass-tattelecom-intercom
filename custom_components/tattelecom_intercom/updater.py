@@ -16,7 +16,7 @@ from homeassistant.helpers import event
 from homeassistant.util.dt import utcnow
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_send
-from homeassistant.helpers.httpx_client import create_async_httpx_client
+from homeassistant.helpers.httpx_client import get_async_client
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     UpdateFailed,
@@ -51,7 +51,6 @@ CALLBACK_TYPE = Callable[[Any], None]
 _LOGGER = logging.getLogger(__name__)
 
 
-# pylint: disable=too-many-branches,too-many-lines,too-many-arguments
 class IntercomUpdater(DataUpdateCoordinator[dict[str, Any]]):
     """Tattelecom Intercom data updater."""
 
@@ -94,12 +93,7 @@ class IntercomUpdater(DataUpdateCoordinator[dict[str, Any]]):
         self._is_first_update = True
 
         self.client = IntercomClient(
-            create_async_httpx_client(
-                hass,
-                verify_ssl=True,
-                http1=False,
-                http2=True
-            ),
+            get_async_client(hass),
             phone,
             token,
             timeout,
@@ -115,13 +109,8 @@ class IntercomUpdater(DataUpdateCoordinator[dict[str, Any]]):
         self.code_map: dict[str, int] = {}
 
     async def get_snapshot(self, intercom_id: int) -> bytes | None:
-        """Get snapshot from intercom stream.
-        
-        :param intercom_id: int: Intercom ID
-        :return bytes | None: Snapshot image
-        """
+        """Get snapshot from intercom stream."""
         try:
-            # Получаем URL потока из данных
             stream_url = self.data.get(f"{intercom_id}_{ATTR_STREAM_URL}")
             if not stream_url:
                 _LOGGER.error("No stream URL for intercom %s", intercom_id)
@@ -129,14 +118,13 @@ class IntercomUpdater(DataUpdateCoordinator[dict[str, Any]]):
 
             _LOGGER.debug("Getting snapshot from %s", stream_url)
             
-            # Используем httpx для получения кадра
             async with self.client._client as client:
                 response = await client.get(
                     stream_url,
                     timeout=10.0,
                     follow_redirects=True
                 )
-                
+            
                 if response.status_code == 200:
                     _LOGGER.debug("Got snapshot for intercom %s, size: %d bytes", 
                                  intercom_id, len(response.content))
@@ -161,11 +149,9 @@ class IntercomUpdater(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.debug("Data update completed, got %d items: %s", 
                          len(data), list(data.keys()))
             
-            # Проверяем, что данные не пустые
             if not data:
                 _LOGGER.warning("No data received from API for phone %s", self.phone)
             else:
-                # Логируем первые несколько ключей для отладки
                 sample_keys = list(data.keys())[:5]
                 _LOGGER.debug("Sample data keys: %s", sample_keys)
                 
@@ -186,28 +172,18 @@ class IntercomUpdater(DataUpdateCoordinator[dict[str, Any]]):
 
     @cached_property
     def _update_interval(self) -> timedelta:
-        """Update interval
-
-        :return timedelta: update_interval
-        """
+        """Update interval"""
 
         return timedelta(seconds=self._scan_interval)
 
     def update_data(self, field: str, value: Any) -> None:
-        """Update data
-
-        :param field: str
-        :param value: Any
-        """
+        """Update data"""
 
         self.data[field] = value
 
     @property
     def device_info(self) -> DeviceInfo:
-        """Device info.
-
-        :return DeviceInfo: Service DeviceInfo.
-        """
+        """Device info."""
 
         return DeviceInfo(
             identifiers={(DOMAIN, str(self.phone))},
@@ -216,10 +192,7 @@ class IntercomUpdater(DataUpdateCoordinator[dict[str, Any]]):
         )
 
     def schedule_refresh(self, offset: timedelta) -> None:
-        """Schedule refresh.
-
-        :param offset: timedelta
-        """
+        """Schedule refresh."""
 
         if self._unsub_refresh:
             self._unsub_refresh()
@@ -232,11 +205,7 @@ class IntercomUpdater(DataUpdateCoordinator[dict[str, Any]]):
         )
 
     async def _async_prepare(self, data: dict, retry: int = 1) -> None:
-        """Prepare data.
-
-        :param data: dict
-        :param retry: int
-        """
+        """Prepare data."""
 
         _error: IntercomConnectionError | None = None
 
@@ -267,10 +236,7 @@ class IntercomUpdater(DataUpdateCoordinator[dict[str, Any]]):
             raise _error
 
     async def _async_prepare_intercoms(self, data: dict) -> None:
-        """Prepare intercoms.
-
-        :param data: dict
-        """
+        """Prepare intercoms."""
 
         _LOGGER.debug("Fetching intercoms from API for phone %s", self.phone)
         
@@ -292,7 +258,6 @@ class IntercomUpdater(DataUpdateCoordinator[dict[str, Any]]):
                 stream_url = gate.get(ATTR_STREAM_URL)
                 stream_url_mpeg = gate.get(ATTR_STREAM_URL_MPEG)
 
-                # Основной URL для потока: MPEG-TS если есть, иначе HLS
                 primary_stream_url = stream_url_mpeg if stream_url_mpeg else stream_url
 
                 _LOGGER.debug(
@@ -337,10 +302,7 @@ class IntercomUpdater(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.warning("No 'gates' in response: %s", response)
 
     async def _async_prepare_sip_settings(self, data: dict) -> None:
-        """Prepare sip_settings.
-
-        :param data: dict
-        """
+        """Prepare sip_settings."""
 
         _LOGGER.debug("Fetching SIP settings from API for phone %s", self.phone)
         
@@ -387,10 +349,7 @@ class IntercomUpdater(DataUpdateCoordinator[dict[str, Any]]):
             )
 
     async def _call_callback(self, call: Call) -> None:
-        """Call callback
-
-        :param call: Call
-        """
+        """Call callback"""
 
         _LOGGER.debug("Call callback received: %s", call)
         self.last_call = call
@@ -409,12 +368,7 @@ class IntercomEntityDescription:
 
 @callback
 def async_get_updater(hass: HomeAssistant, identifier: str) -> IntercomUpdater:
-    """Return IntercomUpdater for username or entry id.
-
-    :param hass: HomeAssistant
-    :param identifier: str
-    :return IntercomUpdater
-    """
+    """Return IntercomUpdater for username or entry id."""
 
     if (
         DOMAIN not in hass.data

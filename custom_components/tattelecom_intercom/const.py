@@ -159,9 +159,7 @@ CONF_STREAM_TYPES: Final = "stream_types"
 DEFAULT_STREAM_TYPES: Final = ["mpeg"]
 STREAM_TYPE_MPEG: Final = "mpeg"
 STREAM_TYPE_HLS: Final = "hls"
-STREAM_TYPE_WEBRTC: Final = "webrtc"
 STREAM_TYPE_OPTIONS: Final = {
     STREAM_TYPE_MPEG: "MPEG-TS",
     STREAM_TYPE_HLS: "HLS",
-    STREAM_TYPE_WEBRTC: "WebRTC",
 }

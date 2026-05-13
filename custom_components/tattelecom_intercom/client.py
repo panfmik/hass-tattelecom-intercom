@@ -35,7 +35,6 @@ from .exceptions import (
 _LOGGER = logging.getLogger(__name__)
 
 
-# pylint: disable=too-many-public-methods,too-many-arguments
 class IntercomClient:
     """Tattelecom intercom API Client."""
 
@@ -52,13 +51,7 @@ class IntercomClient:
         token: str | None = None,
         timeout: int = DEFAULT_TIMEOUT,
     ) -> None:
-        """Initialize API client.
-
-        :param client: AsyncClient: AsyncClient object
-        :param token: str | None: Auth token
-        :param phone: int: Phone number
-        :param timeout: int: Query execution timeout
-        """
+        """Initialize API client."""
 
         self._client = client
         self._timeout = timeout
@@ -76,15 +69,7 @@ class IntercomClient:
         params: dict | None = None,
         api_version: ApiVersion = ApiVersion.V1,
     ) -> dict:
-        """Request method with retries.
-
-        :param path: str: Api path
-        :param method: Method: Api method
-        :param body: dict | None: Api body
-        :param params: dict | None: Api query
-        :param api_version: ApiVersion: Api version
-        :return dict: Api data.
-        """
+        """Request method with retries."""
         _url: str = CLIENT_URL.format(api_version=api_version, path=path)
         _headers: dict = HEADERS.copy()
         if self._token:
@@ -93,21 +78,19 @@ class IntercomClient:
         last_exception: Exception | None = None
         for attempt in range(MAX_RETRIES + 1):
             try:
-                async with self._client as client:
-                    response: Response = await client.request(
-                        method,
-                        _url,
-                        json=body,
-                        params=params,
-                        headers=_headers,
-                        timeout=self._timeout,
-                    )
+                response: Response = await self._client.request(
+                    method,
+                    _url,
+                    json=body,
+                    params=params,
+                    headers=_headers,
+                    timeout=self._timeout,
+                )
 
                 self._debug("Successful request", _url, response.content, path)
 
                 _data: dict = json.loads(response.content)
 
-                # Check for status codes that indicate temporary failures
                 if response.status_code in RETRY_STATUS_CODES:
                     raise IntercomConnectionError(
                         f"Server error {response.status_code}"
@@ -126,11 +109,9 @@ class IntercomClient:
                         _data.get("error_text", _data.get("message", "Request error"))
                     )
 
-                # Success
                 return _data
 
             except (IntercomNotFoundError, IntercomUnauthorizedError, IntercomRequestError):
-                # These are client errors, no retry
                 raise
             except (HTTPError, ConnectError, TransportError, ValueError, TypeError, json.JSONDecodeError) as e:
                 last_exception = e
@@ -161,14 +142,10 @@ class IntercomClient:
                 )
                 await asyncio.sleep(delay)
 
-        # If we exhausted all retries
         raise IntercomConnectionError("Connection error after retries") from last_exception
 
     async def signin(self) -> dict:
-        """Signin
-
-        :return dict: Response data
-        """
+        """Signin"""
 
         return await self.request(
             "auth",
@@ -181,11 +158,7 @@ class IntercomClient:
         )
 
     async def sms_confirm(self, code: str) -> dict:
-        """Sms confirm
-
-        :param code: str: Sms code
-        :return dict: Response data
-        """
+        """Sms confirm"""
 
         return await self.request(
             "auth/confirm-sms",
@@ -200,11 +173,7 @@ class IntercomClient:
         )
 
     async def update_push_token(self, token: str) -> dict:
-        """Update push token
-
-        :param token: str: Api token
-        :return dict: Response data
-        """
+        """Update push token"""
 
         self._token = token
 
@@ -219,10 +188,7 @@ class IntercomClient:
         )
 
     async def sip_settings(self) -> dict:
-        """Get sip settings
-
-        :return dict: Response data
-        """
+        """Get sip settings"""
 
         return await self.request(
             "subscriber/sipsettings",
@@ -233,22 +199,15 @@ class IntercomClient:
         )
 
     async def intercoms(self) -> dict:
-        """Get available intercoms
-
-        :return dict: Response data
-        """
+        """Get available intercoms"""
 
         return await self.request(
             "subscriber/gates",
             api_version=ApiVersion.V2,
         )
 
-    # TODO: Not yet supported by the manufacturer.
-    async def streams(self) -> dict:  # pragma: no cover
-        """Get available streams
-
-        :return dict: Response data
-        """
+    async def streams(self) -> dict:
+        """Get available streams"""
 
         return await self.request(
             "subscriber/available-streams",
@@ -260,11 +219,7 @@ class IntercomClient:
         )
 
     async def open(self, intercom_id: int) -> dict:
-        """Open intercom
-
-        :param intercom_id: int: Intercom ID
-        :return dict: Response data
-        """
+        """Open intercom"""
 
         return await self.request(
             "gate/open-door",
@@ -274,11 +229,7 @@ class IntercomClient:
         )
 
     async def mute(self, intercom_id: int) -> dict:
-        """Disable calls
-
-        :param intercom_id: int: Intercom ID
-        :return dict: Response data
-        """
+        """Disable calls"""
 
         return await self.request(
             "subscriber/disable-intercom-calls",
@@ -291,11 +242,7 @@ class IntercomClient:
         )
 
     async def unmute(self, intercom_id: int) -> dict:
-        """Enable calls
-
-        :param intercom_id: int: Intercom ID
-        :return dict: Response data
-        """
+        """Enable calls"""
 
         return await self.request(
             "subscriber/enable-intercom-calls",
@@ -322,22 +269,7 @@ class IntercomClient:
         saturday: bool = True,
         sunday: bool = True,
     ) -> dict:
-        """Set schedule
-
-        :param intercom_id: int: Intercom ID
-        :param start_h: int: Start hours
-        :param start_m: int: Start minutes
-        :param finish_h: int: Finish hours
-        :param finish_m: int: Finish minutes
-        :param monday: bool: Monday
-        :param tuesday: bool: Tuesday
-        :param wednesday: bool: Wednesday
-        :param thursday: bool: Thursday
-        :param friday: bool: Friday
-        :param saturday: bool: Saturday
-        :param sunday: bool: Sunday
-        :return dict: Response data
-        """
+        """Set schedule"""
 
         return await self.request(
             "subscriber/set-schedule",
@@ -361,13 +293,7 @@ class IntercomClient:
         )
 
     def _debug(self, message: str, url: str, content: Any, path: str) -> None:
-        """Debug log
-
-        :param message: str: Message
-        :param url: str: URL
-        :param content: Any: Content
-        :param path: str: Path
-        """
+        """Debug log"""
 
         _LOGGER.debug("%s (%s): %s", message, url, str(content))
 
@@ -375,7 +301,7 @@ class IntercomClient:
 
         try:
             _content = json.loads(content)
-        except (ValueError, TypeError):  # pragma: no cover
+        except (ValueError, TypeError):
             _content = str(content)
 
         self.diagnostics[path] = {
